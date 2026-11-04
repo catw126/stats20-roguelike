@@ -4,19 +4,19 @@ library(tidyverse)
 # ---------- GAME DATA (edit these to tweak the game) ----------
 
 heroes <- data.frame(
-  name    = c("Knight", "Mage", "Rogue", "Cleric"),
+  name    = c("Knight", "Mage", "Assassin", "Archer"),
   hp      = c(120, 80, 90, 110),
   attack  = c(22, 30, 25, 20),
   defense = c(10, 4, 6, 8),
   speed   = c(5, 8, 15, 7),               # speed = % chance to dodge
-  special = c("Shield Bash", "Fireball", "Backstab", "Holy Smite"),
+  special = c("Shield Bash", "Fireball", "Backstab", "Holy Smite"), #reassign to match new classes
   blurb   = c("Tough and steady.", "Hits hard, fragile.",
-              "Fast and slippery.", "Balanced and sturdy."),
+              "Fast and slippery.", "Balanced and sturdy."), #reassign to match new classes
   stringsAsFactors = FALSE
 )
 
 enemies <- data.frame(
-  name    = c("Slime", "Goblin", "Skeleton", "Ember Dragon"),
+  name    = c("Slime", "Goblin", "Skeleton", "Ember Dragon"), #add a few more, can just generate
   hp      = c(40, 60, 80, 150),
   attack  = c(10, 14, 18, 24),
   defense = c(2, 4, 6, 8),
@@ -29,8 +29,21 @@ reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
 # Damage = attack (times a multiplier) minus half the defense, with a little randomness
 calc_damage <- function(attack, defense, mult = 1) {
-  base <- attack * mult - defense * 0.5
-  max(1, round(base * runif(1, 0.85, 1.15)))
+  #rewrite this
+}
+
+get_effective_atk <- function(){ #placeholder
+  req(rv$hero)
+  base <- #get attacker's base atk stat
+  total <- base + rv$atk_mod
+  return(max(1, total))
+}
+
+get_effective_def <- function(){ #placeholder
+  req(rv$hero)
+  base <- #get attacker's base def stat
+    total <- base + rv$def_mod
+  return(max(1, total))
 }
 
 hp_bar <- function(current, max_hp, colour) {
@@ -70,7 +83,17 @@ server <- function(input, output, session) {
     screen = "select",   # "select", "battle", "victory", "defeat"
     hero = NULL, hp = 0, guard = FALSE, charges = 3,
     enemy_idx = 1, enemy_hp = 0,
-    log = character()
+    log = character(),
+    
+    # --- DYNAMIC MODIFIERS & BUFFS (Temporary additions/multipliers) ---
+    atk_mod = 0,
+    def_mod = 0,
+    spd_mod = 0,
+    
+    # --- STATUS FLAGS ---
+    poisoned = FALSE,
+    paralyzed = FALSE,
+    sleep = FALSE #can add more status effects if we feel like it but this is base list
   )
   
   add_log <- function(...) {
@@ -98,6 +121,8 @@ server <- function(input, output, session) {
     hero  <- rv$hero
     enemy <- enemies[rv$enemy_idx, ]
     rv$guard <- FALSE
+    
+    #want to probably include an if statement to determine turn order depending on speed?
     
     # Player's move
     if (action == "attack") {
