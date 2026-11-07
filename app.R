@@ -20,7 +20,8 @@ enemies <- data.frame( #for all of the regular waves, could do like a random sam
   defense = c(2, 4, 6, 8),
   speed = c(3, 4, 5, 12),
   stringsAsFactors = FALSE
-)
+) #TODO: implement a way to randomize the grunt waves per run, but keeping corresponding stats for the same enemy intact
+#maybe create a function that creates a vector of enemy names by randomly sampling the set of names (excluding boss)
 
 reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
@@ -34,7 +35,7 @@ calc_damage <- function(attack, defense, mult = 1) {
   return (max(1, round(raw)))
 }
 
-get_effective_atk <- function(character, is_hero=T){ #add a percentage modifier so that this equals the attack damage
+get_effective_atk <- function(character, is_hero=T){ 
   req(rv$hero)
   base <- character$attack
   if (is_hero){
@@ -146,13 +147,9 @@ server <- function(input, output, session) {
     rv$screen <- "battle"
   }
   
-  # --- One full round: player acts, then the enemy responds ---
-  play_round <- function(action) {
+  player_turn <- function(action) {
     hero  <- rv$hero
     enemy <- enemies[rv$enemy_idx, ]
-    rv$guard <- FALSE
-    
-    #want to probably include an if statement to determine turn order depending on speed?
     hero_atk <- get_effective_atk(hero, T)
     hero_def <- get_effective_def(hero, T)
     hero_spd <- get_effective_spd(hero, T)
@@ -161,48 +158,78 @@ server <- function(input, output, session) {
     enemy_def <- get_effective_def(enemy, F)
     enemy_spd <- get_effective_spd(enemy, F)
     
+    hero_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1 #Crit chance, do we want to put that in log text?
+    enemy_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1
     
-    # Player's move
-    if (action == "attack") {
-      d <- calc_damage(hero_atk, enemy_def)
-      rv$enemy_hp <- rv$enemy_hp - d
+    if (action == "attack") { #TODO: implement stat boost/lowering moves once those are finalized
+      d <- calc_damage(hero_atk, enemy_def, hero_mult)
+      rv$enemy_hp <- max(0, rv$enemy_hp - d)
       add_log(hero$name, " strikes ", enemy$name, " for ", d, " damage.")
-    } else if (action == "special") {
+    } else if (action == "special") { #Decide if we wanna keep this
       rv$charges <- rv$charges - 1
       d <- calc_damage(hero_atk, enemy_def, mult = 2)
-      rv$enemy_hp <- rv$enemy_hp - d
+      rv$enemy_hp <- max(0, rv$enemy_hp - d)
       add_log(hero$name, " uses ", hero$special, "! ", d, " damage!")
     } else if (action == "guard") {
       rv$guard <- TRUE
       add_log(hero$name, " braces for the next hit.")
     }
+  }
+  
+  enemy_turn <- function() {
+    hero  <- rv$hero
+    enemy <- enemies[rv$enemy_idx, ]
     
-    # Did the enemy die?
-    if (rv$enemy_hp <= 0) {
-      add_log(enemy$name, " is defeated!")
-      if (rv$enemy_idx == nrow(enemies)) {
-        rv$screen <- "victory"
-      } else {
-        # Move to the next enemy, with a small recovery between fights
-        heal <- round(0.4 * hero$hp)
-        rv$hp <- min(hero$hp, rv$hp + heal)
-        rv$charges <- min(3, rv$charges + 1)
-        rv$enemy_idx <- rv$enemy_idx + 1
-        rv$enemy_hp <- enemies$hp[rv$enemy_idx]
-      }  
-      return(invisible())
-    }
-        # Enemy's turn
     if (runif(1) < hero$speed / 100) {
       add_log(hero$name, " dodges ", enemy$name, "'s attack!")
     } else {
-      d <- calc_damage(enemy_atk, hero_def)
+      d <- calc_damage(enemy_atk, hero_def, enemy_mult)
       if (rv$guard) d <- max(1, round(d / 2))
-      rv$hp <- rv$hp - d
+      rv$hp <- max(0, rv$hp - d)
       add_log(enemy$name, " hits ", hero$name, " for ", d, " damage.")
     }
     
     if (rv$hp <= 0) rv$screen <- "defeat"
+  }
+  
+  end_wave <- function() {
+    hero  <- rv$hero
+    enemy <- enemies[rv$enemy_idx, ]
+    add_log(enemy$name, " is defeated!")
+    
+    if (rv$enemy_idx == nrow(enemies)) {
+      rv$screen <- "victory"
+    } else {
+      heal <- round(0.4 * hero$hp)
+      rv$hp <- min(hero$hp, rv$hp + heal)
+      rv$charges <- min(3, rv$charges + 1)
+      rv$enemy_idx <- rv$enemy_idx + 1
+      rv$enemy_hp <- enemies$hp[rv$enemy_idx]
+      
+      rv$atk_mod <- 0; rv$def_mod <- 0; rv$spd_mod <- 0
+      rv$enemy_atk_mod <- 0; rv$enemy_def_mod <- 0; rv$enemy_spd_mod <- 0
+      
+      add_log("You rest and recover ", heal, " HP. Next: ",
+              enemies$name[rv$enemy_idx], "!")
+    }
+  }
+  
+  play_round <- function(action) {
+    rv$guard <- FALSE
+    enemy_spd <- get_effective_spd(enemy, F) #not in scope, will have to fix leaving off 10/6
+    hero_spd  <- get_effective_spd(hero, T)
+    enemy_first <- enemy_spd > hero_spd   # ties go to the hero
+    
+    if (enemy_first) enemy_turn()
+    if (rv$screen == "defeat") return(invisible())
+    
+    player_turn(action)
+    if (rv$enemy_hp <= 0) {
+      end_wave()
+      return(invisible())
+    }
+    
+    if (!enemy_first) enemy_turn()
   }
   
   observeEvent(input$start, start_game(input$hero_pick))
