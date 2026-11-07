@@ -2,20 +2,18 @@ library(shiny)
 library(tidyverse)
 
 # ---------- GAME DATA (edit these to tweak the game) ----------
-
-heroes <- data.frame(
-  name    = c("Knight", "Mage", "Assassin", "Archer"),
-  hp      = c(120, 80, 90, 110),
-  attack  = c(22, 30, 25, 20),
-  defense = c(10, 4, 6, 8),
-  speed   = c(5, 8, 15, 7),               # speed = % chance to dodge
-  special = c("Shield Bash", "Fireball", "Backstab", "Holy Smite"), #reassign to match new classes
-  blurb   = c("Tough and steady.", "Hits hard, fragile.",
-              "Fast and slippery.", "Balanced and sturdy."), #reassign to match new classes
-  stringsAsFactors = FALSE
+hero_template <- list(
+  knight = list(name = "Knight", hp = 120, attack = 22, defense = 10,
+                speed = 5, special = "Shield Bash", level = 1, blurb = "Tough and steady."),
+  mage   = list(name = "Mage", hp = 80, attack = 30, defense = 4,
+                speed = 8, special = "Fireball", level = 1, blurb = "Smart and focused."),
+  assassin = list(name = "Assassin", hp = 90, attack = 25, defense = 6,
+                  speed = 15, special = "Backstab", level = 1, blurb = "Fast and slippery"),
+  archer = list(name = "Archer", hp = 110, attack = 20, defense = 8,
+                speed = 7, special = "Holy Smite", level = 1, blurb = "Balanced and sturdy")
 )
-
-enemies <- data.frame(
+ 
+enemies <- data.frame( #for all of the regular waves, could do like a random sampling of these
   name    = c("Slime", "Goblin", "Skeleton", "Ember Dragon"), #add a few more, can just generate
   hp      = c(40, 60, 80, 150),
   attack  = c(10, 14, 18, 24),
@@ -32,17 +30,24 @@ calc_damage <- function(attack, defense, mult = 1) {
   #rewrite this
 }
 
-get_effective_atk <- function(){ #placeholder
+get_effective_atk <- function(hero=T){ #placeholder
   req(rv$hero)
   base <- #get attacker's base atk stat
   total <- base + rv$atk_mod
   return(max(1, total))
 }
 
-get_effective_def <- function(){ #placeholder
+get_effective_def <- function(hero=T){ #placeholder
   req(rv$hero)
   base <- #get attacker's base def stat
     total <- base + rv$def_mod
+  return(max(1, total))
+}
+
+get_effective_spd <- function(hero=T){ #placeholder
+  req(rv$hero)
+  base <- #get attacker's base spd stat
+    total <- base + rv$spd_mod
   return(max(1, total))
 }
 
@@ -90,31 +95,40 @@ server <- function(input, output, session) {
     def_mod = 0,
     spd_mod = 0,
     
+    enemy_atk_mod = 0,
+    enemy_def_mod = 0,
+    enemy_spd_mod = 0,
+    
     # --- STATUS FLAGS ---
     poisoned = FALSE,
     paralyzed = FALSE,
-    sleep = FALSE #can add more status effects if we feel like it but this is base list
+    sleep = FALSE, #can add more status effects if we feel like it but this is base list
+    
+    enemy_poisoned = FALSE,
+    enemy_paralyzed = FALSE,
+    enemy_sleep = FALSE
   )
   
   add_log <- function(...) {
     rv$log <- c(paste0(...), rv$log)   # newest message goes on top
   }
   
-  start_game <- function(i) {
-    rv$hero <- heroes[i, ]
-    rv$hp <- heroes$hp[i]
+  load_hero <- function(key) {
+    rv$hero <- hero_template[[key]]
+    rv$hp   <- hero_template[[key]]$hp
+  }
+  
+  start_game <- function(key) {
+    load_hero(key)
     rv$guard <- FALSE
     rv$charges <- 3
     rv$enemy_idx <- 1
     rv$enemy_hp <- enemies$hp[1]
+    rv$atk_mod <- 0; rv$def_mod <- 0; rv$spd_mod <- 0
+    rv$enemy_atk_mod <- 0; rv$enemy_def_mod <- 0; rv$enemy_spd_mod <- 0
     rv$log <- paste0("The quest begins! A wild ", enemies$name[1], " appears!")
     rv$screen <- "battle"
   }
-  
-  # --- Hero selection buttons (one observer per hero) ---
-  lapply(seq_len(nrow(heroes)), function(i) {
-    observeEvent(input[[paste0("pick_", i)]], start_game(i))
-  })
   
   # --- One full round: player acts, then the enemy responds ---
   play_round <- function(action) {
@@ -123,15 +137,23 @@ server <- function(input, output, session) {
     rv$guard <- FALSE
     
     #want to probably include an if statement to determine turn order depending on speed?
+    hero_atk <- get_effective_atk()
+    hero_def <- get_effective_def()
+    hero_spd <- get_effective_spd()
+    
+    enemy_atk <- get_effective_atk(F)
+    enemy_def <- get_effective_def(F)
+    enemy_spd <- get_effective_spd(F)
+    
     
     # Player's move
     if (action == "attack") {
-      d <- calc_damage(hero$attack, enemy$defense)
+      d <- calc_damage(hero_atk, enemy_def)
       rv$enemy_hp <- rv$enemy_hp - d
       add_log(hero$name, " strikes ", enemy$name, " for ", d, " damage.")
     } else if (action == "special") {
       rv$charges <- rv$charges - 1
-      d <- calc_damage(hero$attack, enemy$defense, mult = 2)
+      d <- calc_damage(hero_atk, enemy_def, mult = 2)
       rv$enemy_hp <- rv$enemy_hp - d
       add_log(hero$name, " uses ", hero$special, "! ", d, " damage!")
     } else if (action == "guard") {
@@ -151,17 +173,14 @@ server <- function(input, output, session) {
         rv$charges <- min(3, rv$charges + 1)
         rv$enemy_idx <- rv$enemy_idx + 1
         rv$enemy_hp <- enemies$hp[rv$enemy_idx]
-        add_log("You rest and recover ", heal, " HP. Next: ",
-                enemies$name[rv$enemy_idx], "!")
-      }
+      }  
       return(invisible())
     }
-    
-    # Enemy's turn
+        # Enemy's turn
     if (runif(1) < hero$speed / 100) {
       add_log(hero$name, " dodges ", enemy$name, "'s attack!")
     } else {
-      d <- calc_damage(enemy$attack, hero$defense)
+      d <- calc_damage(enemy_atk, hero_def)
       if (rv$guard) d <- max(1, round(d / 2))
       rv$hp <- rv$hp - d
       add_log(enemy$name, " hits ", hero$name, " for ", d, " damage.")
@@ -170,27 +189,35 @@ server <- function(input, output, session) {
     if (rv$hp <= 0) rv$screen <- "defeat"
   }
   
+  observeEvent(input$start, start_game(input$hero_pick))
   observeEvent(input$attack,  play_round("attack"))
   observeEvent(input$special, play_round("special"))
   observeEvent(input$guard,   play_round("guard"))
   observeEvent(input$restart, rv$screen <- "select")
   
   # --- Screens ---
+  output$hero_preview <- renderUI({
+    h <- hero_template[[input$hero_pick]]
+    req(h)
+    div(class = "card",
+        h3(h$name), p(em(h$blurb)),
+        p("HP: ", h$hp), p("Attack: ", h$attack),
+        p("Defense: ", h$defense), p("Speed: ", h$speed),
+        p("Special: ", strong(h$special)))
+  })
+  
   output$screen <- renderUI({
     
     if (rv$screen == "select") {
-      cards <- lapply(seq_len(nrow(heroes)), function(i) {
-        h <- heroes[i, ]
-        column(3, div(class = "card",
-                      h3(h$name), p(em(h$blurb)),
-                      p("HP: ", h$hp), p("Attack: ", h$attack),
-                      p("Defense: ", h$defense), p("Speed: ", h$speed),
-                      p("Special: ", strong(h$special)),
-                      actionButton(paste0("pick_", i), paste("Choose", h$name),
-                                   class = "btn-primary")
-        ))
-      })
-      return(tagList(h2("Choose your hero"), fluidRow(cards)))
+      return(tagList(
+        h2("Choose your hero"),
+        div(style = "text-align:center;",
+            selectInput("hero_pick", "Choose your hero:",
+                        choices = names(hero_template)),
+            uiOutput("hero_preview"),
+            actionButton("start", "Start quest", class = "btn-primary")
+        )
+      ))
     }
     
     if (rv$screen == "victory") {
