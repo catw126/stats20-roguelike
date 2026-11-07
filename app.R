@@ -18,6 +18,7 @@ enemies <- data.frame( #for all of the regular waves, could do like a random sam
   hp      = c(40, 60, 80, 150),
   attack  = c(10, 14, 18, 24),
   defense = c(2, 4, 6, 8),
+  speed = c(3, 4, 5, 12),
   stringsAsFactors = FALSE
 )
 
@@ -27,27 +28,42 @@ reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
 # Damage = attack (times a multiplier) minus half the defense, with a little randomness
 calc_damage <- function(attack, defense, mult = 1) {
-  #rewrite this
+  stopifnot(is.numeric(attack), is.numeric(defense), is.numeric(mult))
+  a <- attack * mult #1 for normal, 1.5 for crit if we do that, 2 for special if we do that
+  raw <- a * (100/(100 + defense)) * runif(1, 0.8, 1.2)
+  return (max(1, round(raw)))
 }
 
-get_effective_atk <- function(hero=T){ #placeholder
+get_effective_atk <- function(character, is_hero=T){ #add a percentage modifier so that this equals the attack damage
   req(rv$hero)
-  base <- #get attacker's base atk stat
-  total <- base + rv$atk_mod
+  base <- character$attack
+  if (is_hero){
+    total <- base + atk_mod
+  }else{
+    total <- base + enemy_atk_mod
+  }
   return(max(1, total))
 }
 
-get_effective_def <- function(hero=T){ #placeholder
+get_effective_def <- function(character, is_hero=T){ #placeholder
   req(rv$hero)
-  base <- #get attacker's base def stat
-    total <- base + rv$def_mod
+  base <- character$defense
+  if (is_hero){
+    total <- base + def_mod
+  }else{
+    total <- base + enemy_def_mod
+  }
   return(max(1, total))
 }
 
-get_effective_spd <- function(hero=T){ #placeholder
+get_effective_spd <- function(character, is_hero=T){ #placeholder
   req(rv$hero)
-  base <- #get attacker's base spd stat
-    total <- base + rv$spd_mod
+  base <- character$speed
+  if (is_hero){
+    total <- base + spd_mod
+  }else{
+    total <- base + enemy_spd_mod
+  }
   return(max(1, total))
 }
 
@@ -137,13 +153,13 @@ server <- function(input, output, session) {
     rv$guard <- FALSE
     
     #want to probably include an if statement to determine turn order depending on speed?
-    hero_atk <- get_effective_atk()
-    hero_def <- get_effective_def()
-    hero_spd <- get_effective_spd()
+    hero_atk <- get_effective_atk(hero, T)
+    hero_def <- get_effective_def(hero, T)
+    hero_spd <- get_effective_spd(hero, T)
     
-    enemy_atk <- get_effective_atk(F)
-    enemy_def <- get_effective_def(F)
-    enemy_spd <- get_effective_spd(F)
+    enemy_atk <- get_effective_atk(enemy, F)
+    enemy_def <- get_effective_def(enemy, F)
+    enemy_spd <- get_effective_spd(enemy, F)
     
     
     # Player's move
