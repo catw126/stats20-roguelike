@@ -138,29 +138,27 @@ server <- function(input, output, session) {
     
     hero_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1 #Crit chance, do we want to put that in log text?
     
-    if (stunned){
-      if (runif(1, 0, 1) >= 0.70){
+    if (stunned && runif(1, 0, 1) >= 0.70){
         add_log(hero$name, " is stunned and cannot move.")
-        return()
-      }
     }
-    
-    if (action == "physical attack") { #TODO: implement stat boost/lowering moves once those are finalized
-      d <- calc_damage(hero_atk, enemy_def, hero_mult)
-      rv$enemy_hp <- max(0, rv$enemy_hp - d)
-      add_log(hero$name, " strikes ", enemy$name, " for ", d, " damage.")
-    } 
-    else if (action == "magic attack") { 
-      d <- calc_damage(hero_int, enemy_def, hero_mult)
-      rv$enemy_hp <- max(0, rv$enemy_hp - d)
-      add_log(hero$name, " blasts ", enemy$name, " for ", d, " damage.")
-    } 
-    else if (action == "special") { #Decide if we wanna keep this
-      rv$charges <- rv$charges - 1
-      d <- calc_damage(hero_atk, enemy_def, mult = 2)
-      rv$enemy_hp <- max(0, rv$enemy_hp - d)
-      add_log(hero$name, " uses ", hero$special, "! ", d, " damage!")
-    } 
+    else{
+      if (action == "physical attack") { #TODO: implement stat boost/lowering moves once those are finalized
+        d <- calc_damage(hero_atk, enemy_def, hero_mult)
+        rv$enemy_hp <- max(0, rv$enemy_hp - d)
+        add_log(hero$name, " strikes ", enemy$name, " for ", d, " damage.")
+      } 
+      else if (action == "magic attack") { 
+        d <- calc_damage(hero_int, enemy_def, hero_mult)
+        rv$enemy_hp <- max(0, rv$enemy_hp - d)
+        add_log(hero$name, " blasts ", enemy$name, " for ", d, " damage.")
+      } 
+      else if (action == "special") { #Decide if we wanna keep this
+        rv$charges <- rv$charges - 1
+        d <- calc_damage(hero_atk, enemy_def, mult = 2)
+        rv$enemy_hp <- max(0, rv$enemy_hp - d)
+        add_log(hero$name, " uses ", hero$special, "! ", d, " damage!")
+      } 
+    }
     if (poisoned){
       rv$hp <- rv$hp - floor(rv$hp * (1/8))
       add_log(hero$name, " takes poison damage.")
@@ -182,23 +180,21 @@ server <- function(input, output, session) {
     
     enemy_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1
     
-    if (enemy_stunned){
-      if (runif(1, 0, 1) >= 0.70){
+    if (enemy_stunned && runif(1, 0, 1) >= 0.70){
         add_log(enemy$name, " is stunned and cannot move.")
-        return()
-      }
     }
-    
-    if (runif(1) < hero_spd / 100) {
-      add_log(hero$name, " dodges ", enemy$name, "'s attack!")
-    } 
-    else {
-      d <- calc_damage(enemy_atk, hero_def, enemy_mult)
-      if (rv$guard) {
-        d <- max(1, round(d / 2))
+    else{
+      if (runif(1) < hero_spd / 100) {
+        add_log(hero$name, " dodges ", enemy$name, "'s attack!")
+      } 
+      else {
+        d <- calc_damage(enemy_atk, hero_def, enemy_mult)
+        if (rv$guard) {
+          d <- max(1, round(d / 2))
+        }
+        rv$hp <- max(0, rv$hp - d)
+        add_log(enemy$name, " hits ", hero$name, " for ", d, " damage.")
       }
-      rv$hp <- max(0, rv$hp - d)
-      add_log(enemy$name, " hits ", hero$name, " for ", d, " damage.")
     }
     if (poisoned){
       rv$hp <- rv$hp - floor(rv$hp * (1/8))
