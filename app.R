@@ -96,7 +96,7 @@ server <- function(input, output, session) {
     enemy_sleep = FALSE
   )
   
-  calc_fraction(modifier){
+  calc_fraction <- function(modifier){
     if (modifier == 0){
       return(1)
     }
