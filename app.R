@@ -3,69 +3,37 @@ library(tidyverse)
 
 # ---------- GAME DATA (edit these to tweak the game) ----------
 hero_template <- list(
-  knight = list(name = "Knight", hp = 120, attack = 22, defense = 10,
-                speed = 5, special = "Shield Bash", level = 1, blurb = "Tough and steady."),
-  mage   = list(name = "Mage", hp = 80, attack = 30, defense = 4,
-                speed = 8, special = "Fireball", level = 1, blurb = "Smart and focused."),
-  assassin = list(name = "Assassin", hp = 90, attack = 25, defense = 6,
-                  speed = 15, special = "Backstab", level = 1, blurb = "Fast and slippery"),
-  archer = list(name = "Archer", hp = 110, attack = 20, defense = 8,
+  knight = list(name = "Knight", hp = 110, attack = 6, defense = 9, intellect = 4,
+                speed = 3, special = "Shield Bash", level = 1, blurb = "Tough and steady."),
+  mage   = list(name = "Mage", hp = 65, attack = 2, defense = 4, intellect = 10,
+                speed = 6, special = "Fireball", level = 1, blurb = "Smart and focused."),
+  assassin = list(name = "Assassin", hp = 75, attack = 7, defense = 2, intellect = 4,
+                  speed = 9, special = "Backstab", level = 1, blurb = "Fast and slippery"),
+  berserker = list(name = "Berserker", hp = 90, attack = 10, defense = 3, intellect = 2,
                 speed = 7, special = "Holy Smite", level = 1, blurb = "Balanced and sturdy")
 )
  
-enemies <- data.frame( #for all of the regular waves, could do like a random sampling of these
+enemies <- data.frame( 
   name    = c("Slime", "Goblin", "Skeleton", "Ember Dragon"), #add a few more, can just generate
   hp      = c(40, 60, 80, 150),
-  attack  = c(10, 14, 18, 24),
-  defense = c(2, 4, 6, 8),
+  attack  = c(10, 14, 18, 24), #modify these to match the <= 10 base stats from above
+  defense = c(2, 4, 6, 8), #if we want to add enemies that are weak to magic vs physical, need another variable encoding magic defense
   speed = c(3, 4, 5, 12),
   stringsAsFactors = FALSE
-) #TODO: implement a way to randomize the grunt waves per run, but keeping corresponding stats for the same enemy intact
+) 
+
+#TODO: implement a way to randomize the grunt waves per run, but keeping corresponding stats for the same enemy intact
 #maybe create a function that creates a vector of enemy names by randomly sampling the set of names (excluding boss)
 
 reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
 # ---------- HELPER FUNCTIONS (plain R, no Shiny needed) ----------
 
-# Damage = attack (times a multiplier) minus half the defense, with a little randomness
 calc_damage <- function(attack, defense, mult = 1) {
   stopifnot(is.numeric(attack), is.numeric(defense), is.numeric(mult))
   a <- attack * mult #1 for normal, 1.5 for crit if we do that, 2 for special if we do that
-  raw <- a * (100/(100 + defense)) * runif(1, 0.8, 1.2)
+  raw <- a * (10/(10 + defense)) * runif(1, 0.8, 1.2)
   return (max(1, round(raw)))
-}
-
-get_effective_atk <- function(character, is_hero=T){ 
-  req(rv$hero)
-  base <- character$attack
-  if (is_hero){
-    total <- base + atk_mod
-  }else{
-    total <- base + enemy_atk_mod
-  }
-  return(max(1, total))
-}
-
-get_effective_def <- function(character, is_hero=T){ #placeholder
-  req(rv$hero)
-  base <- character$defense
-  if (is_hero){
-    total <- base + def_mod
-  }else{
-    total <- base + enemy_def_mod
-  }
-  return(max(1, total))
-}
-
-get_effective_spd <- function(character, is_hero=T){ #placeholder
-  req(rv$hero)
-  base <- character$speed
-  if (is_hero){
-    total <- base + spd_mod
-  }else{
-    total <- base + enemy_spd_mod
-  }
-  return(max(1, total))
 }
 
 hp_bar <- function(current, max_hp, colour) {
@@ -108,7 +76,8 @@ server <- function(input, output, session) {
     log = character(),
     
     # --- DYNAMIC MODIFIERS & BUFFS (Temporary additions/multipliers) ---
-    atk_mod = 0,
+    atk_mod = 0, #gonna treat these like stat stages, with each additional stage changing the multiplier 
+    int_mod = 0, #probably should max out at +/- 4
     def_mod = 0,
     spd_mod = 0,
     
@@ -125,6 +94,18 @@ server <- function(input, output, session) {
     enemy_paralyzed = FALSE,
     enemy_sleep = FALSE
   )
+  
+  calc_fraction(modifier){
+    if (modifier == 0){
+      return(1)
+    }
+    else if (modifier < 0){
+      return (2/(2 + abs(modifier)))
+    }
+    else{
+      return ((2 + modifier)/2)
+    }
+  }
   
   add_log <- function(...) {
     rv$log <- c(paste0(...), rv$log)   # newest message goes on top
@@ -150,41 +131,47 @@ server <- function(input, output, session) {
   player_turn <- function(action) {
     hero  <- rv$hero
     enemy <- enemies[rv$enemy_idx, ]
-    hero_atk <- get_effective_atk(hero, T)
-    hero_def <- get_effective_def(hero, T)
-    hero_spd <- get_effective_spd(hero, T)
-    
-    enemy_atk <- get_effective_atk(enemy, F)
-    enemy_def <- get_effective_def(enemy, F)
-    enemy_spd <- get_effective_spd(enemy, F)
+    hero_atk <- hero$attack*calc_fraction(rv$atk_mod)
+    hero_int <- hero$intellect*calc_fraction(rv$int_mod)
+    enemy_def <- enemy$defense*calc_fraction(rv$enemy_def_mod)
     
     hero_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1 #Crit chance, do we want to put that in log text?
-    enemy_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1
     
-    if (action == "attack") { #TODO: implement stat boost/lowering moves once those are finalized
+    if (action == "physical attack") { #TODO: implement stat boost/lowering moves once those are finalized
       d <- calc_damage(hero_atk, enemy_def, hero_mult)
       rv$enemy_hp <- max(0, rv$enemy_hp - d)
       add_log(hero$name, " strikes ", enemy$name, " for ", d, " damage.")
-    } else if (action == "special") { #Decide if we wanna keep this
+    } 
+    else if (action == "magic attack") { 
+      d <- calc_damage(hero_int, enemy_def, hero_mult)
+      rv$enemy_hp <- max(0, rv$enemy_hp - d)
+      add_log(hero$name, " blasts ", enemy$name, " for ", d, " damage.")
+    } 
+    else if (action == "special") { #Decide if we wanna keep this
       rv$charges <- rv$charges - 1
       d <- calc_damage(hero_atk, enemy_def, mult = 2)
       rv$enemy_hp <- max(0, rv$enemy_hp - d)
       add_log(hero$name, " uses ", hero$special, "! ", d, " damage!")
-    } else if (action == "guard") {
-      rv$guard <- TRUE
-      add_log(hero$name, " braces for the next hit.")
-    }
+    } 
   }
   
   enemy_turn <- function() {
     hero  <- rv$hero
     enemy <- enemies[rv$enemy_idx, ]
+    enemy_atk <- enemy$attack*calc_fraction(rv$enemy_atk_mod)
+    hero_def <- hero$defense*calc_fraction(rv$def_mod)
+    hero_spd <- hero$speed*calc_fraction(rv$spd_mod)
     
-    if (runif(1) < hero$speed / 100) {
+    enemy_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1
+    
+    if (runif(1) < hero_spd / 100) {
       add_log(hero$name, " dodges ", enemy$name, "'s attack!")
-    } else {
+    } 
+    else {
       d <- calc_damage(enemy_atk, hero_def, enemy_mult)
-      if (rv$guard) d <- max(1, round(d / 2))
+      if (rv$guard) {
+        d <- max(1, round(d / 2))
+      }
       rv$hp <- max(0, rv$hp - d)
       add_log(enemy$name, " hits ", hero$name, " for ", d, " damage.")
     }
@@ -215,10 +202,17 @@ server <- function(input, output, session) {
   }
   
   play_round <- function(action) {
+    hero <- rv$hero
+    enemy <- enemies[rv$enemy_idx, ]
     rv$guard <- FALSE
-    enemy_spd <- get_effective_spd(enemy, F) #not in scope, will have to fix leaving off 10/6
-    hero_spd  <- get_effective_spd(hero, T)
+    enemy_spd <- enemy$speed*calc_fraction(rv$enemy_spd_mod)
+    hero_spd  <- hero$speed*calc_fraction(rv$spd_mod)
     enemy_first <- enemy_spd > hero_spd   # ties go to the hero
+    
+    if (action == "guard") {
+      rv$guard <- TRUE
+      add_log(hero$name, " braces for the next hit.")
+    }
     
     if (enemy_first) enemy_turn()
     if (rv$screen == "defeat") return(invisible())

@@ -1,0 +1,9 @@
+TODO List:
+- Determine if special moves are to be used
+- Determine if level up/exp will be implemented and how that would affect base stats
+- Determine if we want magic defense for enemies in addition to normal defense, to make magic vs physical a more noticeable difference
+- Determine if stat boosting/lowering moves will be implemented
+- Determine if enemies should also have a moveset or if they will just have a basic attack
+- Figure out how to store movesets
+- Implement a pool of enemies that can be randomly drawn from and used to create randomized waves
+- Implement status conditions and work into battle process
