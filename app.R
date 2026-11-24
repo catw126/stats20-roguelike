@@ -14,7 +14,7 @@ hero_template <- list(
                 speed = 7, level = 1, blurb = "Balanced and sturdy")
 )
  
-enemies <- data.frame( 
+enemies_template <- data.frame( 
   name    = c("Slime", "Goblin", "Skeleton"), #add a few more, can just generate
   hp      = c(40, 60, 80),
   attack  = c(3, 4, 5), #modify these to match the <= 10 base stats from above
@@ -29,7 +29,7 @@ boss <- data.frame(
   hp = 150,
   attack = 9,
   phys_defense = 8,
-  mag_defence = 8,
+  mag_defense = 8,
   speed = 8,
   stringsAsFactors = FALSE
 )
@@ -81,7 +81,13 @@ hp_bar <- function(current, max_hp, colour) {
 }
 
 get_moves <- function(owner) {
-  moves[moves$owner == owner, ]
+  return(moves[moves$owner == owner, ])
+}
+
+get_enemy_stat <- function(en_name, en_stat) {
+  if (!(en_stat %in% enemies_template))
+    return(invisible())
+  return(enemies_template$en_stat[enemies_template$name == en_name])
 }
 
 # ---------- UI ----------
@@ -111,7 +117,7 @@ server <- function(input, output, session) {
   
   rv <- reactiveValues(
     screen = "select",   # "select", "battle", "victory", "defeat"
-    hero = NULL, hero_key = "", hp = 0, guard = FALSE,
+    hero = NULL, hero_key = "", hp = 0, guard = FALSE, wave = NULL,
     enemy_idx = 1, enemy_hp = 0,
     log = character(),
     
@@ -204,17 +210,19 @@ server <- function(input, output, session) {
     load_hero(key)
     rv$guard <- FALSE
     clear_statuses()
+    rv$wave <- enemies_template[sample(nrow(enemies_template), 5, replace = TRUE), ]
+    rownames(rv$wave) <- NULL
     rv$enemy_idx <- 1
-    rv$enemy_hp <- enemies$hp[1]
+    rv$enemy_hp <- rv$wave$hp[1]
     rv$atk_mod <- 0; rv$def_mod <- 0; rv$spd_mod <- 0; rv$int_mod <- 0;
     rv$enemy_atk_mod <- 0; rv$enemy_mdef_mod <- 0; rv$enemy_spd_mod <- 0; rv$enemy_pdef_mod <- 0;
-    rv$log <- paste0("The quest begins! A wild ", enemies$name[1], " appears!")
+    rv$log <- paste0("The quest begins! A wild ", rv$wave$name[1], " appears!")
     rv$screen <- "battle"
   }
   
   player_turn <- function(action) {
     hero  <- rv$hero
-    enemy <- enemies[rv$enemy_idx, ]
+    enemy <- rv$wave[rv$enemy_idx, ]
     move <- moves[moves$id == action, ]
     hero_atk <- hero$attack * calc_fraction(rv$atk_mod)
     hero_int <- hero$intellect * calc_fraction(rv$int_mod)
@@ -267,7 +275,7 @@ server <- function(input, output, session) {
   
   enemy_turn <- function() {
     hero  <- rv$hero
-    enemy <- enemies[rv$enemy_idx, ]
+    enemy <- rv$wave[rv$enemy_idx, ]
     enemy_moves <- get_moves(enemy$name)
     enemy_move <- enemy_moves[sample(nrow(enemy_moves), 1), ]
     enemy_atk <- enemy$attack*calc_fraction(rv$enemy_atk_mod)
@@ -319,29 +327,29 @@ server <- function(input, output, session) {
   
   end_wave <- function() {
     hero  <- rv$hero
-    enemy <- enemies[rv$enemy_idx, ]
+    enemy <- rv$wave[rv$enemy_idx, ]
     add_log(enemy$name, " is defeated!")
     
-    if (rv$enemy_idx == nrow(enemies)) {
+    if (rv$enemy_idx == nrow(rv$wave)) {
       rv$screen <- "victory"
     } else {
       clear_statuses(keep_hpoison = TRUE)
       heal <- round(0.4 * hero$hp)
       rv$hp <- min(hero$hp, rv$hp + heal)
       rv$enemy_idx <- rv$enemy_idx + 1
-      rv$enemy_hp <- enemies$hp[rv$enemy_idx]
+      rv$enemy_hp <- rv$wave$hp[rv$enemy_idx]
       
       rv$atk_mod <- 0; rv$def_mod <- 0; rv$spd_mod <- 0
       rv$enemy_atk_mod <- 0; rv$enemy_mdef_mod <- 0; rv$enemy_spd_mod <- 0; rv$enemy_pdef_mod <- 0
       
       add_log("You rest and recover ", heal, " HP. Next: ",
-              enemies$name[rv$enemy_idx], "!")
+              rv$wave$name[rv$enemy_idx], "!")
     }
   }
   
   play_round <- function(action) {
     hero <- rv$hero
-    enemy <- enemies[rv$enemy_idx, ]
+    enemy <- rv$wave[rv$enemy_idx, ]
     rv$guard <- FALSE
     enemy_spd <- enemy$speed*calc_fraction(rv$enemy_spd_mod)
     hero_spd  <- hero$speed*calc_fraction(rv$spd_mod)
@@ -416,7 +424,7 @@ server <- function(input, output, session) {
     if (rv$screen == "victory") {
       return(div(class = "card",
                  h2("Victory!"),
-                 p("The ", strong(enemies$name[nrow(enemies)]), " has fallen."),
+                 p("The ", strong(rv$wave$name[nrow(rv$wave)]), " has fallen."),
                  h3(reward_text),
                  p("The quest is complete. Thanks for playing!"),
                  actionButton("restart", "Play again", class = "btn-success")
@@ -433,7 +441,7 @@ server <- function(input, output, session) {
     
     # Battle screen
     hero  <- rv$hero
-    enemy <- enemies[rv$enemy_idx, ]
+    enemy <- rv$wave[rv$enemy_idx, ]
     fluidRow(
       column(6, div(class = "card",
                     h3(hero$name), hp_bar(rv$hp, hero$hp, "#4caf50")
@@ -441,7 +449,7 @@ server <- function(input, output, session) {
       column(6, div(class = "card",
                     h3(enemy$name),
                     hp_bar(rv$enemy_hp, enemy$hp, "#e53935"),
-                    p("Enemy ", rv$enemy_idx, " of ", nrow(enemies))
+                    p("Enemy ", rv$enemy_idx, " of ", nrow(rv$wave))
       )),
       column(12, div(style = "text-align:center;",
                      uiOutput("move_buttons"),
