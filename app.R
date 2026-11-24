@@ -5,26 +5,61 @@ library(tidyverse)
 # ---------- GAME DATA (edit these to tweak the game) ----------
 hero_template <- list(
   knight = list(name = "Knight", hp = 110, attack = 6, defense = 9, intellect = 4,
-                speed = 3, special = "Shield Bash", level = 1, blurb = "Tough and steady."),
+                speed = 3, level = 1, blurb = "Tough and steady."),
   mage   = list(name = "Mage", hp = 65, attack = 2, defense = 4, intellect = 10,
-                speed = 6, special = "Fireball", level = 1, blurb = "Smart and focused."),
+                speed = 6, level = 1, blurb = "Smart and focused."),
   assassin = list(name = "Assassin", hp = 75, attack = 7, defense = 2, intellect = 4,
-                  speed = 9, special = "Backstab", level = 1, blurb = "Fast and slippery"),
+                  speed = 9, level = 1, blurb = "Fast and slippery"),
   berserker = list(name = "Berserker", hp = 90, attack = 10, defense = 3, intellect = 2,
-                speed = 7, special = "Holy Smite", level = 1, blurb = "Balanced and sturdy")
+                speed = 7, level = 1, blurb = "Balanced and sturdy")
 )
  
 enemies <- data.frame( 
-  name    = c("Slime", "Goblin", "Skeleton", "Ember Dragon"), #add a few more, can just generate
-  hp      = c(40, 60, 80, 150),
-  attack  = c(10, 14, 18, 24), #modify these to match the <= 10 base stats from above
-  defense = c(2, 4, 6, 8), #if we want to add enemies that are weak to magic vs physical, need another variable encoding magic defense
-  speed = c(3, 4, 5, 12),
+  name    = c("Slime", "Goblin", "Skeleton"), #add a few more, can just generate
+  hp      = c(40, 60, 80),
+  attack  = c(3, 4, 5), #modify these to match the <= 10 base stats from above
+  phys_defense = c(1, 2, 4),
+  mag_defense = c(3, 1, 4),
+  speed = c(3, 4, 5),
   stringsAsFactors = FALSE
 ) 
 
+boss <- data.frame(
+  name = "Ember Dragon",
+  hp = 150,
+  attack = 9,
+  phys_defense = 8,
+  mag_defence = 8,
+  speed = 8,
+  stringsAsFactors = FALSE
+)
+
 #TODO: implement a way to randomize the grunt waves per run, but keeping corresponding stats for the same enemy intact
 #maybe create a function that creates a vector of enemy names by randomly sampling the set of names (excluding boss)
+
+moves <- tribble( #move names are placeholders, replace once we know actual moves
+  ~owner,         ~id,              ~label,            ~type,
+  "knight",       "slash",          "Slash",           "physical",
+  "knight",       "shield_bash",    "Shield Bash",     "condition_st",
+  "knight",       "spear_throw",    "Spear Throw",     "physical",
+  "mage",         "fireball",       "Fireball",        "magic",
+  "mage",         "ice_shard",      "Ice Shard",       "magic",
+  "mage",         "power_boost",    "Power Boost",     "stat_self",
+  "mage",         "sleep_fog",      "Sleep Fog",       "condition_sl",
+  "assassin",     "backstab",       "Backstab",        "physical",
+  "assassin",     "shadow_bolt",    "Shadow Bolt",     "magic",
+  "assassin",     "agility",        "Agility",         "stat_self",
+  "berserker",    "frenzy_chop",    "Frenzy Chop",     "physical",
+  "berserker",    "bloodlust_roar", "Bloodlust Roar",  "stat_en",
+  "berserker",    "body_slam",      "Body Slam",       "physical",
+  "Slime",        "bounce",         "Bounce",          "physical",
+  "Slime",        "poison",         "Poison",          "condition_p",
+  "Goblin",       "club_smash",     "Club Smash",      "physical",
+  "Skeleton",     "bone_throw",     "Bone Throw",      "physical",
+  "Ember Dragon", "tail_swipe",     "Tail Swipe",      "physical",
+  "Ember Dragon", "fire_breath",    "Fire Breath",     "physical"
+)
+
 
 reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
@@ -32,7 +67,7 @@ reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
 calc_damage <- function(attack, defense, mult = 1) {
   stopifnot(is.numeric(attack), is.numeric(defense), is.numeric(mult))
-  a <- attack * mult #1 for normal, 1.5 for crit if we do that, 2 for special if we do that
+  a <- attack * mult #1 for normal, 1.5 for crit if we do that
   raw <- a * (10/(10 + defense)) * runif(1, 0.8, 1.2)
   return (max(1, round(raw)))
 }
@@ -83,7 +118,8 @@ server <- function(input, output, session) {
     spd_mod = 0,
     
     enemy_atk_mod = 0,
-    enemy_def_mod = 0,
+    enemy_pdef_mod = 0,
+    enemy_mdef_mod = 0,
     enemy_spd_mod = 0,
     
     # --- STATUS FLAGS ---
@@ -134,7 +170,8 @@ server <- function(input, output, session) {
     enemy <- enemies[rv$enemy_idx, ]
     hero_atk <- hero$attack*calc_fraction(rv$atk_mod)
     hero_int <- hero$intellect*calc_fraction(rv$int_mod)
-    enemy_def <- enemy$defense*calc_fraction(rv$enemy_def_mod)
+    enemy_pdef <- enemy$phys_defense*calc_fraction(rv$enemy_pdef_mod)
+    enemy_mdef <- enemy$mag_defense*calc_fraction(rv$enemy_mdef_mod)
     
     hero_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1 #Crit chance, do we want to put that in log text?
     
@@ -142,21 +179,15 @@ server <- function(input, output, session) {
         add_log(hero$name, " is stunned and cannot move.")
     }
     else{
-      if (action == "physical attack") { #TODO: implement stat boost/lowering moves once those are finalized
-        d <- calc_damage(hero_atk, enemy_def, hero_mult)
+      if (action == "physical_attack") { #TODO: implement stat boost/lowering moves once those are finalized
+        d <- calc_damage(hero_atk, enemy_pdef, hero_mult)
         rv$enemy_hp <- max(0, rv$enemy_hp - d)
         add_log(hero$name, " strikes ", enemy$name, " for ", d, " damage.")
       } 
-      else if (action == "magic attack") { 
-        d <- calc_damage(hero_int, enemy_def, hero_mult)
+      else if (action == "magic_attack") { 
+        d <- calc_damage(hero_int, enemy_mdef, hero_mult)
         rv$enemy_hp <- max(0, rv$enemy_hp - d)
         add_log(hero$name, " blasts ", enemy$name, " for ", d, " damage.")
-      } 
-      else if (action == "special") { #Decide if we wanna keep this
-        rv$charges <- rv$charges - 1
-        d <- calc_damage(hero_atk, enemy_def, mult = 2)
-        rv$enemy_hp <- max(0, rv$enemy_hp - d)
-        add_log(hero$name, " uses ", hero$special, "! ", d, " damage!")
       } 
     }
     if (poisoned){
@@ -258,8 +289,8 @@ server <- function(input, output, session) {
   }
   
   observeEvent(input$start, start_game(input$hero_pick))
-  observeEvent(input$attack,  play_round("attack"))
-  observeEvent(input$special, play_round("special"))
+  observeEvent(input$attack,  play_round("physical attack"))
+  observeEvent(input$attack,  play_round("magic attack"))
   observeEvent(input$guard,   play_round("guard"))
   observeEvent(input$restart, rv$screen <- "select")
   
@@ -270,8 +301,8 @@ server <- function(input, output, session) {
     div(class = "card",
         h3(h$name), p(em(h$blurb)),
         p("HP: ", h$hp), p("Attack: ", h$attack),
-        p("Defense: ", h$defense), p("Speed: ", h$speed),
-        p("Special: ", strong(h$special)))
+        p("Intellect: ", h$intellect),
+        p("Defense: ", h$defense), p("Speed: ", h$speed))
   })
   
   output$screen <- renderUI({
@@ -320,9 +351,8 @@ server <- function(input, output, session) {
                     p("Enemy ", rv$enemy_idx, " of ", nrow(enemies))
       )),
       column(12, div(style = "text-align:center;",
-                     actionButton("attack", "Attack", class = "btn-move btn-primary"),
-                     actionButton("special", paste0(hero$special, " (x2)"),
-                                  class = "btn-move btn-warning",
+                     actionButton("physical_attack", "Physical Attack", class = "btn-move btn-primary"),
+                     actionButton("magic_attack", "Magic Attack", class = "btn-move btn-warning",
                                   disabled = if (rv$charges <= 0) "disabled" else NULL),
                      actionButton("guard", "Guard", class = "btn-move btn-info")
       )),
