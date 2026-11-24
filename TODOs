@@ -1,10 +1,11 @@
 TODO List:
-- Determine if special moves are to be used
-- Determine if level up/exp will be implemented and how that would affect base stats
-- Determine if we want magic defense for enemies in addition to normal defense, to make magic vs physical a more noticeable difference
-- Determine if stat boosting/lowering moves will be implemented
-- Determine if enemies should also have a moveset or if they will just have a basic attack
+- Determine if special moves are to be used (no) (done)
+- Determine if level up/exp will be implemented and how that would affect base stats (yes)
+- Determine if we want magic defense for enemies in addition to normal defense, to make magic vs physical a more noticeable difference (yes) (done)
+- Determine if stat boosting/lowering moves will be implemented (yes)
+- Determine if enemies should also have a moveset or if they will just have a basic attack (small moveset)
 - Determine what logic for sleep is (wake up upon getting hit or wake up on random roll?)
 - Figure out how to store movesets, and if move names should be unique
 - Implement a pool of enemies that can be randomly drawn from and used to create randomized waves
 - Implement status conditions and work into battle process (in progress)
+- Take out special move gimmick
