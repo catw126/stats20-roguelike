@@ -5,22 +5,22 @@ library(tidyverse)
 # ---------- GAME DATA (edit these to tweak the game) ----------
 hero_template <- list(
   knight = list(name = "Knight", hp = 110, attack = 6, defense = 9, intellect = 4,
-                speed = 3, level = 1, blurb = "Tough and steady."),
+                speed = 5, level = 1, blurb = "Tough and steady."),
   mage   = list(name = "Mage", hp = 85, attack = 2, defense = 4, intellect = 10,
                 speed = 6, level = 1, blurb = "Smart and focused."),
-  assassin = list(name = "Assassin", hp = 80, attack = 7, defense = 3, intellect = 4,
+  assassin = list(name = "Assassin", hp = 80, attack = 7, defense = 6, intellect = 4,
                   speed = 9, level = 1, blurb = "Fast and slippery"),
-  berserker = list(name = "Berserker", hp = 100, attack = 10, defense = 3, intellect = 2,
+  berserker = list(name = "Berserker", hp = 100, attack = 10, defense = 5, intellect = 2,
                 speed = 7, level = 1, blurb = "Balanced and sturdy")
 )
  
 enemies_template <- data.frame( 
-  name    = c("Slime", "Goblin", "Skeleton"), #add a few more, can just generate
-  hp      = c(40, 60, 80),
-  attack  = c(4, 6, 6), #modify these to match the <= 10 base stats from above
-  phys_defense = c(1, 2, 4),
-  mag_defense = c(2, 2, 4),
-  speed = c(3, 4, 5),
+  name    = c("Slime", "Goblin", "Skeleton", "Cultist", "Stone Golem", "Wraith"), #add a few more, can just generate
+  hp      = c(40, 60, 60, 50, 70, 60),
+  attack  = c(4, 6, 5, 6, 7, 6), #modify these to match the <= 10 base stats from above
+  phys_defense = c(2, 2, 4, 1, 7, 15), #simulating wraith invis with just insanely high physical defense
+  mag_defense = c(1, 2, 2, 5, 3, 7), 
+  speed = c(3, 4, 5, 5, 2, 6),
   stringsAsFactors = FALSE
 ) 
 
@@ -28,9 +28,9 @@ boss <- data.frame(
   name = "Ember Dragon",
   hp = 120,
   attack = 9,
-  phys_defense = 4,
-  mag_defense = 4,
-  speed = 6,
+  phys_defense = 7,
+  mag_defense = 7,
+  speed = 7,
   stringsAsFactors = FALSE
 )
 
@@ -50,7 +50,7 @@ moves <- tribble( #move names are placeholders, replace once we know actual move
   "assassin",     "shadow_bolt",    "Shadow Bolt",     "magic",                  1.0,
   "assassin",     "agility",        "Agility",         "stat",                   0.0,
   "berserker",    "frenzy_chop",    "Frenzy Chop",     "physical",               1.0,
-  "berserker",    "bloodlust_roar", "Bloodlust Roar",  "stat_en",                0.0,
+  "berserker",    "bloodlust_roar", "Bloodlust Roar",  "stat",                   0.0,
   "berserker",    "body_slam",      "Body Slam",       "physical",               1.2,
   "Slime",        "tackle",         "Tackle",          "physical",               1.0,
   "Slime",        "acid_spit",      "Acid Spit",       "physical+stat",          0.5,
@@ -73,7 +73,7 @@ reward_text <- "You claim the Dragon's Hoard: 500 gold and the Ember Crown!"
 
 # ---------- HELPER FUNCTIONS (plain R, no Shiny needed) ----------
 
-calc_damage <- function(attack, defense, mult = 1, power, scale = 1) {
+calc_damage <- function(attack, defense, mult = 1, power) {
   stopifnot(is.numeric(attack), is.numeric(defense), is.numeric(mult))
   a <- attack * mult * power #1 for normal, 1.5 for crit if we do that
   raw <- a * (10/(10 + defense)) * runif(1, 0.8, 1.2)
@@ -170,6 +170,7 @@ server <- function(input, output, session) {
                    acid_spit      = list(stat = "def_mod", delta = -1, target = "hero", label = "defense"),
                    cowards_ret    = list(stat = "enemy_spd_mod", delta = 1, target = "enemy", label = "speed"),
                    ash_cloud      = list(stat = "enemy_spd_mod", delta = 4, target = "enemy", label = "speed"),
+                   harden         = list(stat = "enemy_pdef_mod", delta = 2, target = "enemy", label = "physical defense"),
                    NULL)
     if (is.null(spec)) return(invisible())
     
@@ -188,14 +189,14 @@ server <- function(input, output, session) {
                    dark_siphon    = list(num = damage_dealt, target = "enemy_hp", percentage = FALSE),
                    NULL)
     if (is.null(spec)) return(invisible())
-    if (percentage){
-      healed <- rv[[spec$target]]*num
-      rv[[spec$target]] <- max(max_hp, rv[[spec$target]]*(1 + num))
+    if (spec$percentage){
+      healed <- rv[[spec$target]]*spec$num
+      rv[[spec$target]] <- min(max_hp, rv[[spec$target]]*(1 + spec$num))
       add_log(user_name, " recovered ", healed, " HP!")
     }
     else{
-      rv[[spec$target]] <- max(max_hp, rv[[spec$target]] + num)
-      add_log(user_name, " recovered ", num, " HP!")
+      rv[[spec$target]] <- min(max_hp, rv[[spec$target]] + spec$num)
+      add_log(user_name, " recovered ", spec$num, " HP!")
     }
   }
   
@@ -257,10 +258,12 @@ server <- function(input, output, session) {
     hero_int <- hero$intellect * calc_fraction(rv$int_mod)
     enemy_pdef <- enemy$phys_defense * calc_fraction(rv$enemy_pdef_mod)
     enemy_mdef <- enemy$mag_defense * calc_fraction(rv$enemy_mdef_mod)
-    move_types <- str_split(move$type, "+", fixed = TRUE)[[1]]
+    enemy_spd <- enemy$speed*calc_fraction(rv$enemy_spd_mod)
+    move_types <- strsplit(move$type, "+", fixed = TRUE)[[1]]
     d <- 0
     
     hero_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1 #Crit chance, do we want to put that in log text?
+    crit <- if (hero_mult == 1.5) TRUE else FALSE
     
     if (rv$sleep) {
       if (runif(1) < 0.3) {
@@ -277,20 +280,46 @@ server <- function(input, output, session) {
       return(invisible())
     }
     if ("physical" %in% move_types) { #TODO: implement stat boost/lowering moves once those are finalized
+      if (runif(1) < enemy_spd / 100) {
+        add_log(enemy$name, " dodges ", hero$name, "'s ", "attack!")
+        if (rv$poisoned){
+          rv$hp <- rv$hp - floor(rv$hp * (1/8))
+          add_log(hero$name, " takes poison damage.")
+        }
+        if (rv$enemy_poisoned){
+          rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+          add_log(enemy$name, " takes poison damage.")
+        }
+        return(invisible())
+      }
       d <- calc_damage(hero_atk, enemy_pdef, hero_mult, move$power)
-      rv$enemy_hp <- max(0, rv$enemy_hp - d)        
+      rv$enemy_hp <- max(0, rv$enemy_hp - d)     
+      if (crit) add_log("Critical hit!")
       add_log(hero$name, " uses ", move$label, " on ", enemy$name, " for ", d, " damage.")
     } 
     else if ("magic" %in% move_types) { 
+      if (runif(1) < enemy_spd / 100) {
+        add_log(enemy$name, " dodges ", hero$name, "'s ", "attack!")
+        if (rv$poisoned){
+          rv$hp <- rv$hp - floor(rv$hp * (1/8))
+          add_log(hero$name, " takes poison damage.")
+        }
+        if (rv$enemy_poisoned){
+          rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+          add_log(enemy$name, " takes poison damage.")
+        }
+        return(invisible())
+      }
       d <- calc_damage(hero_int, enemy_mdef, hero_mult, move$power)
       rv$enemy_hp <- max(0, rv$enemy_hp - d)
+      if (crit) add_log("Critical hit!")
       add_log(hero$name, " uses ", move$label, " on ", enemy$name, " for ", d, " damage.")
     } 
     if ("stat" %in% move_types) {
       apply_stat_move(action, hero$name, enemy$name)
     }
     if (any(startsWith(move_types, "condition"))) {
-      apply_condition(action, "enemy", enemy$name)
+      apply_condition(move_types[startsWith(move_types, "condition")], "enemy", enemy$name)
     }
     if ("heal" %in% move_types){
       apply_heal(action, hero$name, hero$hp, d)
@@ -316,13 +345,15 @@ server <- function(input, output, session) {
     enemy_atk <- enemy$attack*calc_fraction(rv$enemy_atk_mod)
     hero_def <- hero$defense*calc_fraction(rv$def_mod)
     hero_spd <- hero$speed*calc_fraction(rv$spd_mod)
-    move_types <- str_split(enemy_move$type, "+", fixed = TRUE)[[1]]
+    move_types <- strsplit(enemy_move$type, "+", fixed = TRUE)[[1]]
     d <- 0
     
     enemy_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1
-    if (enemy$name == "Ember Dragon" && (enemy_hp < 100)){
+    crit <- if (enemy_mult == 1.5) TRUE else FALSE
+    
+    if (enemy$name == "Ember Dragon" && (rv$enemy_hp < 100)){
       enemy_atk <- 1.5*enemy_atk
-      add.log("The Ember Dragon has become enraged!")
+      add_log("The Ember Dragon has become enraged!")
     }
     
     if (rv$enemy_sleep) {
@@ -341,7 +372,15 @@ server <- function(input, output, session) {
 
     if ("physical" %in% move_types) {
       if (runif(1) < hero_spd / 100) {
-        add_log(hero$name, " dodges ", enemy$name, "'s ", enemy_move$label, "!")
+        add_log(hero$name, " dodges ", enemy$name, "'s ", "attack!")
+        if (rv$poisoned){
+          rv$hp <- rv$hp - floor(rv$hp * (1/8))
+          add_log(hero$name, " takes poison damage.")
+        }
+        if (rv$enemy_poisoned){
+          rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+          add_log(enemy$name, " takes poison damage.")
+        }
         return(invisible())
       }
       d <- calc_damage(enemy_atk, hero_def, enemy_mult, enemy_move$power)
@@ -349,16 +388,17 @@ server <- function(input, output, session) {
         d <- max(1, round(d / 2))
       }
       rv$hp <- max(0, rv$hp - d)
+      if (crit) add_log("Critical hit!")
       add_log(enemy$name, " uses ", enemy_move$label, " on ", hero$name, " for ", d, " damage.")
     } 
     if ("stat" %in% move_types) {
-      apply_stat_move(action, hero$name, enemy$name)
+      apply_stat_move(enemy_move$id, hero$name, enemy$name)
     }
     if (any(startsWith(move_types, "condition"))) {
-      apply_condition(action, "hero", hero$name)
+      apply_condition(move_types[startsWith(move_types, "condition")], "hero", hero$name)
     }
     if ("heal" %in% move_types){
-      apply_heal(enemy_move, enemy$name, enemy$hp, d)
+      apply_heal(enemy_move$id, enemy$name, enemy$hp, d)
     }
     
     if (rv$poisoned){
