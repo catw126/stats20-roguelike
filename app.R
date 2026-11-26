@@ -6,31 +6,31 @@ library(tidyverse)
 hero_template <- list(
   knight = list(name = "Knight", hp = 110, attack = 6, defense = 9, intellect = 4,
                 speed = 3, level = 1, blurb = "Tough and steady."),
-  mage   = list(name = "Mage", hp = 65, attack = 2, defense = 4, intellect = 10,
+  mage   = list(name = "Mage", hp = 85, attack = 2, defense = 4, intellect = 10,
                 speed = 6, level = 1, blurb = "Smart and focused."),
-  assassin = list(name = "Assassin", hp = 75, attack = 7, defense = 2, intellect = 4,
+  assassin = list(name = "Assassin", hp = 80, attack = 7, defense = 3, intellect = 4,
                   speed = 9, level = 1, blurb = "Fast and slippery"),
-  berserker = list(name = "Berserker", hp = 90, attack = 10, defense = 3, intellect = 2,
+  berserker = list(name = "Berserker", hp = 100, attack = 10, defense = 3, intellect = 2,
                 speed = 7, level = 1, blurb = "Balanced and sturdy")
 )
  
 enemies_template <- data.frame( 
   name    = c("Slime", "Goblin", "Skeleton"), #add a few more, can just generate
   hp      = c(40, 60, 80),
-  attack  = c(3, 4, 5), #modify these to match the <= 10 base stats from above
+  attack  = c(4, 6, 6), #modify these to match the <= 10 base stats from above
   phys_defense = c(1, 2, 4),
-  mag_defense = c(3, 1, 4),
+  mag_defense = c(2, 2, 4),
   speed = c(3, 4, 5),
   stringsAsFactors = FALSE
 ) 
 
 boss <- data.frame(
   name = "Ember Dragon",
-  hp = 150,
+  hp = 120,
   attack = 9,
-  phys_defense = 8,
-  mag_defense = 8,
-  speed = 8,
+  phys_defense = 4,
+  mag_defense = 4,
+  speed = 6,
   stringsAsFactors = FALSE
 )
 
@@ -210,7 +210,8 @@ server <- function(input, output, session) {
     load_hero(key)
     rv$guard <- FALSE
     clear_statuses()
-    rv$wave <- enemies_template[sample(nrow(enemies_template), 5, replace = TRUE), ]
+    grunts <- enemies_template[sample(nrow(enemies_template), 5, replace = TRUE), ]
+    rv$wave <- rbind(grunts, boss)
     rownames(rv$wave) <- NULL
     rv$enemy_idx <- 1
     rv$enemy_hp <- rv$wave$hp[1]
@@ -232,7 +233,7 @@ server <- function(input, output, session) {
     hero_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1 #Crit chance, do we want to put that in log text?
     
     if (rv$sleep) {
-      if (runif(1) < 0.5) {
+      if (runif(1) < 0.3) {
         rv$sleep <- FALSE
         add_log(hero$name, " wakes up!")
       } else {
@@ -240,6 +241,7 @@ server <- function(input, output, session) {
         return(invisible())
       }
     }
+    
     if (rv$stunned && runif(1, 0, 1) >= 0.70){
         add_log(hero$name, " is stunned and cannot move.")
       return(invisible())
@@ -285,7 +287,7 @@ server <- function(input, output, session) {
     enemy_mult <- if (runif(1, 0, 1) >= 0.80) 1.5 else 1
     
     if (rv$enemy_sleep) {
-      if (runif(1) < 0.5) {
+      if (runif(1) < 0.3) {
         rv$enemy_sleep <- FALSE
         add_log(enemy$name, " wakes up!")
       } else {
@@ -314,12 +316,24 @@ server <- function(input, output, session) {
     }
     
     if (rv$poisoned){
-      rv$hp <- rv$hp - floor(rv$hp * (1/8))
-      add_log(hero$name, " takes poison damage.")
+      if (runif(1) < 0.2) {
+        rv$poisoned <- FALSE
+        add_log(hero$name, " recovers from poison!")
+      }
+      else{
+        rv$hp <- rv$hp - floor(rv$hp * (1/8))
+        add_log(hero$name, " takes poison damage.")
+      }
     }
     if (rv$enemy_poisoned){
-      rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-      add_log(enemy$name, " takes poison damage.")
+      if (runif(1) < 0.2) {
+        rv$enemy_poisoned <- FALSE
+        add_log(enemy$name, " recovers from poison!")
+      }
+      else{
+        rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+        add_log(enemy$name, " takes poison damage.")
+      }
     }
     
     if (rv$hp <= 0) rv$screen <- "defeat"
