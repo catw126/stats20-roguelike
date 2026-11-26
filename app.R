@@ -92,12 +92,6 @@ get_moves <- function(owner) {
   return(moves[moves$owner == owner, ])
 }
 
-get_enemy_stat <- function(en_name, en_stat) {
-  if (!(en_stat %in% enemies_template))
-    return(invisible())
-  return(enemies_template$en_stat[enemies_template$name == en_name])
-}
-
 # ---------- UI ----------
 
 ui <- fluidPage(
@@ -302,6 +296,7 @@ server <- function(input, output, session) {
       if (crit) add_log("Critical hit!")
       add_log(hero$name, " uses ", move$label, " on ", enemy$name, " for ", d, " damage.")
     } 
+    if (rv$enemy_hp <= 0) return(invisible())
     if ("stat" %in% move_types) {
       apply_stat_move(action, hero$name, enemy$name)
     }
@@ -312,6 +307,26 @@ server <- function(input, output, session) {
       apply_heal(action, hero$name, hero$hp, d)
     }
     
+    if (rv$poisoned){
+      if (runif(1) < 0.2) {
+        rv$poisoned <- FALSE
+        add_log(hero$name, " recovers from poison!")
+      }
+      else{
+        rv$hp <- rv$hp - floor(rv$hp * (1/8))
+        add_log(hero$name, " takes poison damage.")
+      }
+    }
+    if (rv$enemy_poisoned){
+      if (runif(1) < 0.2) {
+        rv$enemy_poisoned <- FALSE
+        add_log(enemy$name, " recovers from poison!")
+      }
+      else{
+        rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+        add_log(enemy$name, " takes poison damage.")
+      }
+    }
     if (rv$hp <= 0) rv$screen <- "defeat"
   }
   
@@ -364,6 +379,7 @@ server <- function(input, output, session) {
       if (crit) add_log("Critical hit!")
       add_log(enemy$name, " uses ", enemy_move$label, " on ", hero$name, " for ", d, " damage.")
     } 
+    if (rv$hp <= 0) rv$screen <- "defeat"
     if ("stat" %in% move_types) {
       apply_stat_move(enemy_move$id, hero$name, enemy$name)
     }
@@ -374,6 +390,26 @@ server <- function(input, output, session) {
       apply_heal(enemy_move$id, enemy$name, enemy$hp, d)
     }
     
+    if (rv$poisoned){
+      if (runif(1) < 0.2) {
+        rv$poisoned <- FALSE
+        add_log(hero$name, " recovers from poison!")
+      }
+      else{
+        rv$hp <- rv$hp - floor(rv$hp * (1/8))
+        add_log(hero$name, " takes poison damage.")
+      }
+    }
+    if (rv$enemy_poisoned){
+      if (runif(1) < 0.2) {
+        rv$enemy_poisoned <- FALSE
+        add_log(enemy$name, " recovers from poison!")
+      }
+      else{
+        rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+        add_log(enemy$name, " takes poison damage.")
+      }
+    }
     if (rv$hp <= 0) rv$screen <- "defeat"
   }
   
@@ -431,28 +467,6 @@ server <- function(input, output, session) {
     if (rv$enemy_hp <= 0) {
       end_wave()
       return(invisible())
-    }
-    
-    
-    if (rv$poisoned){
-      if (runif(1) < 0.2) {
-        rv$poisoned <- FALSE
-        add_log(hero$name, " recovers from poison!")
-      }
-      else{
-        rv$hp <- rv$hp - floor(rv$hp * (1/8))
-        add_log(hero$name, " takes poison damage.")
-      }
-    }
-    if (rv$enemy_poisoned){
-      if (runif(1) < 0.2) {
-        rv$enemy_poisoned <- FALSE
-        add_log(enemy$name, " recovers from poison!")
-      }
-      else{
-        rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-        add_log(enemy$name, " takes poison damage.")
-      }
     }
     
   }
