@@ -147,7 +147,9 @@ server <- function(input, output, session) {
     
     enemy_poisoned = FALSE,
     enemy_stunned = FALSE,
-    enemy_sleep = FALSE
+    enemy_sleep = FALSE,
+    
+    enrage = FALSE
   )
   
   calc_fraction <- function(modifier){
@@ -238,6 +240,7 @@ server <- function(input, output, session) {
   start_game <- function(key) {
     load_hero(key)
     rv$guard <- FALSE
+    rv$enrage <- FALSE
     clear_statuses()
     grunts <- enemies_template[sample(nrow(enemies_template), 5, replace = TRUE), ]
     rv$wave <- rbind(grunts, boss)
@@ -282,14 +285,6 @@ server <- function(input, output, session) {
     if ("physical" %in% move_types) { #TODO: implement stat boost/lowering moves once those are finalized
       if (runif(1) < enemy_spd / 100) {
         add_log(enemy$name, " dodges ", hero$name, "'s ", "attack!")
-        if (rv$poisoned){
-          rv$hp <- rv$hp - floor(rv$hp * (1/8))
-          add_log(hero$name, " takes poison damage.")
-        }
-        if (rv$enemy_poisoned){
-          rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-          add_log(enemy$name, " takes poison damage.")
-        }
         return(invisible())
       }
       d <- calc_damage(hero_atk, enemy_pdef, hero_mult, move$power)
@@ -300,14 +295,6 @@ server <- function(input, output, session) {
     else if ("magic" %in% move_types) { 
       if (runif(1) < enemy_spd / 100) {
         add_log(enemy$name, " dodges ", hero$name, "'s ", "attack!")
-        if (rv$poisoned){
-          rv$hp <- rv$hp - floor(rv$hp * (1/8))
-          add_log(hero$name, " takes poison damage.")
-        }
-        if (rv$enemy_poisoned){
-          rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-          add_log(enemy$name, " takes poison damage.")
-        }
         return(invisible())
       }
       d <- calc_damage(hero_int, enemy_mdef, hero_mult, move$power)
@@ -323,15 +310,6 @@ server <- function(input, output, session) {
     }
     if ("heal" %in% move_types){
       apply_heal(action, hero$name, hero$hp, d)
-    }
-    
-    if (rv$poisoned){
-      rv$hp <- rv$hp - floor(rv$hp * (1/8))
-      add_log(hero$name, " takes poison damage.")
-    }
-    if (rv$enemy_poisoned){
-      rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-      add_log(enemy$name, " takes poison damage.")
     }
     
     if (rv$hp <= 0) rv$screen <- "defeat"
@@ -353,7 +331,10 @@ server <- function(input, output, session) {
     
     if (enemy$name == "Ember Dragon" && (rv$enemy_hp < 100)){
       enemy_atk <- 1.5*enemy_atk
-      add_log("The Ember Dragon has become enraged!")
+      if (!rv$enrage){
+        add_log("The Ember Dragon has become enraged!")
+        rv$enrage <- TRUE
+      }
     }
     
     if (rv$enemy_sleep) {
@@ -373,14 +354,6 @@ server <- function(input, output, session) {
     if ("physical" %in% move_types) {
       if (runif(1) < hero_spd / 100) {
         add_log(hero$name, " dodges ", enemy$name, "'s ", "attack!")
-        if (rv$poisoned){
-          rv$hp <- rv$hp - floor(rv$hp * (1/8))
-          add_log(hero$name, " takes poison damage.")
-        }
-        if (rv$enemy_poisoned){
-          rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-          add_log(enemy$name, " takes poison damage.")
-        }
         return(invisible())
       }
       d <- calc_damage(enemy_atk, hero_def, enemy_mult, enemy_move$power)
@@ -401,27 +374,6 @@ server <- function(input, output, session) {
       apply_heal(enemy_move$id, enemy$name, enemy$hp, d)
     }
     
-    if (rv$poisoned){
-      if (runif(1) < 0.2) {
-        rv$poisoned <- FALSE
-        add_log(hero$name, " recovers from poison!")
-      }
-      else{
-        rv$hp <- rv$hp - floor(rv$hp * (1/8))
-        add_log(hero$name, " takes poison damage.")
-      }
-    }
-    if (rv$enemy_poisoned){
-      if (runif(1) < 0.2) {
-        rv$enemy_poisoned <- FALSE
-        add_log(enemy$name, " recovers from poison!")
-      }
-      else{
-        rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
-        add_log(enemy$name, " takes poison damage.")
-      }
-    }
-    
     if (rv$hp <= 0) rv$screen <- "defeat"
   }
   
@@ -439,7 +391,7 @@ server <- function(input, output, session) {
       rv$enemy_idx <- rv$enemy_idx + 1
       rv$enemy_hp <- rv$wave$hp[rv$enemy_idx]
       
-      rv$atk_mod <- 0; rv$def_mod <- 0; rv$spd_mod <- 0
+      rv$atk_mod <- 0; rv$def_mod <- 0; rv$spd_mod <- 0; rv$int_mod <- 0;
       rv$enemy_atk_mod <- 0; rv$enemy_mdef_mod <- 0; rv$enemy_spd_mod <- 0; rv$enemy_pdef_mod <- 0
       
       add_log("You rest and recover ", heal, " HP. Next: ",
@@ -480,6 +432,29 @@ server <- function(input, output, session) {
       end_wave()
       return(invisible())
     }
+    
+    
+    if (rv$poisoned){
+      if (runif(1) < 0.2) {
+        rv$poisoned <- FALSE
+        add_log(hero$name, " recovers from poison!")
+      }
+      else{
+        rv$hp <- rv$hp - floor(rv$hp * (1/8))
+        add_log(hero$name, " takes poison damage.")
+      }
+    }
+    if (rv$enemy_poisoned){
+      if (runif(1) < 0.2) {
+        rv$enemy_poisoned <- FALSE
+        add_log(enemy$name, " recovers from poison!")
+      }
+      else{
+        rv$enemy_hp <- rv$enemy_hp - floor(rv$enemy_hp * (1/8))
+        add_log(enemy$name, " takes poison damage.")
+      }
+    }
+    
   }
   
   observeEvent(input$start, start_game(input$hero_pick))
