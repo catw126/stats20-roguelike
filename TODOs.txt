@@ -1,3 +1,0 @@
-TODO List:
-- Implement leveling system (make sure damage scales well and the enemies also receive a lesser level boost as waves go on)
-- Update movesets once those are finalized
