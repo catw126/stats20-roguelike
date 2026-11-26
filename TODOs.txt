@@ -2,7 +2,6 @@ TODO List:
 - Work boss in as last stage
 - Implement leveling system
 - Update movesets once those are finalized
-- Split code into several files to make accesses more intuitive
 - Fix balance issues with stats in heros, enemies, and boss (do after leveling so u know how it scales)
   - maybe create an enemy stat modifier so that per a certain number of stages the enemies base stats raise by 1
 - Get someone to playtest
